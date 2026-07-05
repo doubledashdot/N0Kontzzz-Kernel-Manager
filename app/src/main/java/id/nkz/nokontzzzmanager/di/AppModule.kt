@@ -83,7 +83,7 @@ object AppModule {
             id.nkz.nokontzzzmanager.data.database.BatteryHistoryDatabase::class.java,
             "battery_history_db"
         )
-        .fallbackToDestructiveMigration(true)
+        .addMigrations(id.nkz.nokontzzzmanager.data.database.BatteryHistoryDatabase.MIGRATION_14_15)
         .build()
     }
 
