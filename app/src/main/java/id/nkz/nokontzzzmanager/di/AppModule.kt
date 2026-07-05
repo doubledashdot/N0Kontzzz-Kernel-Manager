@@ -7,6 +7,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import id.nkz.nokontzzzmanager.data.repository.RootRepository
+import id.nkz.nokontzzzmanager.data.repository.SysfsHelper
+import id.nkz.nokontzzzmanager.data.repository.KernelFeatureRepository
 import id.nkz.nokontzzzmanager.data.repository.SystemRepository
 import id.nkz.nokontzzzmanager.data.repository.TuningRepository
 import javax.inject.Singleton
@@ -38,12 +40,27 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideSysfsHelper(rootRepository: RootRepository): SysfsHelper = SysfsHelper(rootRepository)
+
+    @Provides
+    @Singleton
+    fun provideKernelFeatureRepository(sysfsHelper: SysfsHelper, rootRepository: RootRepository): KernelFeatureRepository =
+        KernelFeatureRepository(sysfsHelper, rootRepository)
+
+    @Provides
+    @Singleton
     fun provideRootRepository(): RootRepository = RootRepository()
 
     @Provides
     @Singleton
-    fun provideSystemRepository(@ApplicationContext context: Context, tuningRepository: TuningRepository, rootRepository: RootRepository): SystemRepository =
-        SystemRepository(context, tuningRepository, rootRepository)
+    fun provideSystemRepository(
+        @ApplicationContext context: Context,
+        tuningRepository: TuningRepository,
+        rootRepository: RootRepository,
+        sysfsHelper: SysfsHelper,
+        kernelFeatures: KernelFeatureRepository,
+    ): SystemRepository =
+        SystemRepository(context, tuningRepository, rootRepository, sysfsHelper, kernelFeatures)
 
     @Provides
     @Singleton

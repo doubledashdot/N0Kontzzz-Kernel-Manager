@@ -48,12 +48,19 @@ import javax.microedition.khronos.egl.EGLContext
 import javax.microedition.khronos.opengles.GL10
 
 
+// ponytail: Feature toggles extracted to KernelFeatureRepository (KGSL, Dirty PTE, Bypass,
+// Fast Charge, BG Blocker, TCP, GPU Throttling, I/O Scheduler). CPU/Battery/GPU/Memory/Kernel
+// monitoring still live here — tightly coupled via getCachedSystemInfo() and realtimeAggregatedInfoFlow.
+// Extract monitoring sections when a clean boundary emerges.
+
 @Suppress("UNREACHABLE_CODE")
 @Singleton
 class SystemRepository @Inject constructor(
     private val context: Context,
     private val tuningRepository: TuningRepository,
     private val rootRepository: RootRepository,
+    private val sysfsHelper: SysfsHelper,
+    private val kernelFeatures: KernelFeatureRepository,
 ) {
 
     companion object {
@@ -80,65 +87,11 @@ class SystemRepository @Inject constructor(
     }
 
     private suspend fun readFileToString(filePath: String, fileDescription: String, attemptSu: Boolean = true, useRetry: Boolean = true): String? {
-        val file = File(filePath)
-        try {
-            if (file.exists() && file.canRead()) {
-                val content = file.readText().trim()
-                if (content.isNotBlank()) {
-                    return content
-                } else if (!attemptSu) {
-                    return null
-                }
-            }
-        } catch (_: SecurityException) {
-        } catch (_: FileNotFoundException) {
-        } catch (_: IOException) {
-            return null
-        } catch (_: Exception) {
-            return null
-        }
-
-        if (attemptSu) {
-            try {
-                // Use the root repository for more reliable command execution
-                val result = rootRepository.run("cat \"$filePath\"", useRetry = useRetry)
-                if (result.isNotBlank()) {
-                    return result.trim()
-                }
-            } catch (_: Exception) {
-                return null
-            }
-        }
-        return null
+        return sysfsHelper.readFileToString(filePath, fileDescription, attemptSu, useRetry)
     }
 
     private suspend fun writeStringToFile(filePath: String, content: String, fileDescription: String, attemptSu: Boolean = true): Boolean {
-        val file = File(filePath)
-        try {
-            if (file.exists() && file.canWrite()) {
-                file.writeText(content)
-                return true
-            } else if (!attemptSu) {
-                return false
-            }
-        } catch (_: SecurityException) {
-        } catch (_: FileNotFoundException) {
-        } catch (_: IOException) {
-            return false
-        } catch (_: Exception) {
-            return false
-        }
-
-        if (attemptSu) {
-            try {
-                // Use the root repository for more reliable command execution
-                rootRepository.run("echo -n \"$content\" > \"$filePath\"")
-                return true
-            } catch (_: Exception) {
-                return false
-            }
-        }
-        return false
+        return sysfsHelper.writeStringToFile(filePath, content, fileDescription, attemptSu)
     }
 
     // Variabel untuk menyimpan data CPU sebelumnya untuk perhitungan load
@@ -1218,320 +1171,45 @@ class SystemRepository @Inject constructor(
         )
     }
 
-    // Helper function to determine which KGSL path is available
-    private suspend fun getAvailableKgslPath(): String? {
-        // 1. Fast check: Standard file access
-        for (path in KernelPaths.KGSL_SKIP_ZEROING) {
-            try {
-                val file = File(path)
-                if (file.exists()) return path
-            } catch (_: Exception) {
-                // Continue to check the next path
-            }
-        }
-        
-        // 2. Slow check: Root access (if file exists but not visible/readable to app user)
-        for (path in KernelPaths.KGSL_SKIP_ZEROING) {
-            try {
-                // attemptSu = true is default
-                if (readFileToString(path, "KGSL Skip Pool Zeroing Check") != null) {
-                    return path
-                }
-            } catch (_: Exception) {
-                // Continue to check the next path
-            }
-        }
-        
-        return null
-    }
+    // KGSL — delegated to KernelFeatureRepository
+    suspend fun getKgslSkipZeroing(): Boolean = kernelFeatures.getKgslSkipZeroing()
+    suspend fun setKgslSkipZeroing(enabled: Boolean): Boolean = kernelFeatures.setKgslSkipZeroing(enabled)
+    suspend fun isKgslFeatureAvailable(): Boolean = kernelFeatures.isKgslFeatureAvailable()
+    fun parseKgslSkipZeroingValue(value: String?): Boolean = kernelFeatures.parseKgslSkipZeroingValue(value)
 
-    suspend fun getKgslSkipZeroing(): Boolean {
-        val path = getAvailableKgslPath()
-        if (path != null) {
-            val value = readFileToString(path, "KGSL Skip Pool Zeroing")
-            return parseKgslSkipZeroingValue(value)
-        }
-        return false
-    }
+    // Avoid Dirty PTE — delegated to KernelFeatureRepository
+    suspend fun isAvoidDirtyPteAvailable(): Boolean = kernelFeatures.isAvoidDirtyPteAvailable()
+    suspend fun getAvoidDirtyPte(): Boolean = kernelFeatures.getAvoidDirtyPte()
+    suspend fun setAvoidDirtyPte(enabled: Boolean): Boolean = kernelFeatures.setAvoidDirtyPte(enabled)
 
-    suspend fun setKgslSkipZeroing(enabled: Boolean): Boolean {
-        val path = getAvailableKgslPath()
-        if (path != null) {
-            val value = if (enabled) "1" else "0"
-            val success = writeStringToFile(path, value, "KGSL Skip Pool Zeroing")
-            if (success) {
-                val actualValue = readFileToString(path, "KGSL Verification")
-                return parseKgslSkipZeroingValue(actualValue) == enabled
-            }
-        }
-        return false
-    }
+    // Bypass Charging — delegated to KernelFeatureRepository
+    suspend fun isBypassChargingAvailable(): Boolean = kernelFeatures.isBypassChargingAvailable()
+    suspend fun getBypassCharging(): Boolean = kernelFeatures.getBypassCharging()
+    suspend fun setBypassCharging(enabled: Boolean): Boolean = kernelFeatures.setBypassCharging(enabled)
 
-    suspend fun isKgslFeatureAvailable(): Boolean {
-        return getAvailableKgslPath() != null
-    }
+    // USB Fast Charge — delegated to KernelFeatureRepository
+    suspend fun isForceFastChargeAvailable(): Boolean = kernelFeatures.isForceFastChargeAvailable()
+    suspend fun getForceFastCharge(): Boolean = kernelFeatures.getForceFastCharge()
+    suspend fun setForceFastCharge(enabled: Boolean): Boolean = kernelFeatures.setForceFastCharge(enabled)
 
-    // Helper function for testing
-    fun parseKgslSkipZeroingValue(value: String?): Boolean {
-        return value?.toIntOrNull() == 1
-    }
+    // Background App Blocker — delegated to KernelFeatureRepository
+    suspend fun isBgBlockerAvailable(): Boolean = kernelFeatures.isBgBlockerAvailable()
+    suspend fun getBgBlocklist(): String = kernelFeatures.getBgBlocklist()
+    suspend fun setBgBlocklist(blocklist: String): Boolean = kernelFeatures.setBgBlocklist(blocklist)
 
-    private suspend fun getAvailableAvoidDirtyPtePath(): String? {
-        for (path in KernelPaths.AVOID_DIRTY_PTE) {
-            if (File(path).exists()) return path
-        }
-        for (path in KernelPaths.AVOID_DIRTY_PTE) {
-            if (readFileToString(path, "Avoid Dirty PTE Check", false) != null) return path
-        }
-        return null
-    }
+    // TCP Congestion — delegated to KernelFeatureRepository
+    suspend fun getTcpCongestionAlgorithm(): String = kernelFeatures.getTcpCongestionAlgorithm()
+    suspend fun setTcpCongestionAlgorithm(algorithm: String): Boolean = kernelFeatures.setTcpCongestionAlgorithm(algorithm)
+    suspend fun getAvailableTcpCongestionAlgorithmsList(): List<String> = kernelFeatures.getAvailableTcpCongestionAlgorithmsList()
 
-    suspend fun isAvoidDirtyPteAvailable(): Boolean {
-        return getAvailableAvoidDirtyPtePath() != null
-    }
+    // GPU Throttling — delegated to KernelFeatureRepository
+    suspend fun isGpuThrottlingEnabled(): Boolean = kernelFeatures.isGpuThrottlingEnabled()
+    suspend fun setGpuThrottling(enabled: Boolean): Boolean = kernelFeatures.setGpuThrottling(enabled)
 
-    suspend fun getAvoidDirtyPte(): Boolean {
-        val path = getAvailableAvoidDirtyPtePath()
-        if (path != null) {
-            val value = readFileToString(path, "Avoid Dirty PTE Status")
-            return value?.trim() == "1"
-        }
-        return false
-    }
-
-    suspend fun setAvoidDirtyPte(enabled: Boolean): Boolean {
-        val path = getAvailableAvoidDirtyPtePath()
-        if (path != null) {
-            val value = if (enabled) "1" else "0"
-            // Use generic robust write approach
-            try {
-                // Ensure writable
-                rootRepository.run("chmod 666 $path")
-                // Write
-                rootRepository.run("echo -n \"$value\" > \"$path\"")
-                // Restore/Lock permissions (read-only to prevent reset)
-                rootRepository.run("chmod 444 $path")
-                return true
-            } catch (e: Exception) {
-                // Fallback to basic writeStringToFile if root/complex commands fail
-                return writeStringToFile(path, value, "Avoid Dirty PTE")
-            }
-        }
-        return false
-    }
-
-    suspend fun isBypassChargingAvailable(): Boolean {
-        val file = File(KernelPaths.BYPASS_CHARGING)
-        if (file.exists()) {
-            return true
-        }
-        // If the file doesn't exist directly, try reading it with root.
-        // readFileToString will return null if the file doesn't exist even with root.
-        return readFileToString(KernelPaths.BYPASS_CHARGING, "Bypass Charging Status Check") != null
-    }
-
-    suspend fun getBypassCharging(): Boolean {
-        val value = readFileToString(KernelPaths.BYPASS_CHARGING, "Bypass Charging Status")
-        return value?.trim() == "1"
-    }
-
-    suspend fun setBypassCharging(enabled: Boolean): Boolean {
-        val value = if (enabled) "1" else "0"
-        val success = writeStringToFile(KernelPaths.BYPASS_CHARGING, value, "Bypass Charging")
-        if (success) {
-            // Verify if the value was actually applied
-            val actualValue = readFileToString(KernelPaths.BYPASS_CHARGING, "Bypass Charging Verification")
-            return actualValue?.trim() == value
-        }
-        return false
-    }
-
-    suspend fun isForceFastChargeAvailable(): Boolean {
-        val file = File(KernelPaths.FORCE_FAST_CHARGE)
-        if (file.exists()) {
-            return true
-        }
-        return readFileToString(KernelPaths.FORCE_FAST_CHARGE, "USB Fast Charge Check") != null
-    }
-
-    suspend fun getForceFastCharge(): Boolean {
-        val value = readFileToString(KernelPaths.FORCE_FAST_CHARGE, "USB Fast Charge Status")
-        return value?.trim() == "1"
-    }
-
-    suspend fun setForceFastCharge(enabled: Boolean): Boolean {
-        val value = if (enabled) "1" else "0"
-        return writeStringToFile(KernelPaths.FORCE_FAST_CHARGE, value, "USB Fast Charge")
-    }
-
-    // Background App Blocker functions
-    private suspend fun getAvailableBgBlocklistPath(): String? {
-        for (path in KernelPaths.BG_BLOCKLIST) {
-            if (File(path).exists()) return path
-        }
-        for (path in KernelPaths.BG_BLOCKLIST) {
-            if (readFileToString(path, "Background Blocker Check", true) != null) return path
-        }
-        return null
-    }
-
-    suspend fun isBgBlockerAvailable(): Boolean {
-        return getAvailableBgBlocklistPath() != null
-    }
-
-    suspend fun getBgBlocklist(): String {
-        val path = getAvailableBgBlocklistPath()
-        if (path != null) {
-            return readFileToString(path, "Background Blocker List") ?: ""
-        }
-        return ""
-    }
-
-    suspend fun setBgBlocklist(blocklist: String): Boolean {
-        val path = getAvailableBgBlocklistPath()
-        if (path != null) {
-            return writeStringToFile(path, blocklist, "Background Blocker List")
-        }
-        return false
-    }
-
-    // TCP Congestion Control Algorithm functions
-
-    private suspend fun getCurrentTcpCongestionAlgorithm(): String? {
-        return readFileToString("/proc/sys/net/ipv4/tcp_congestion_control", "TCP Congestion Control Algorithm")
-    }
-
-    private suspend fun getAvailableTcpCongestionAlgorithms(): List<String> {
-        val available = readFileToString("/proc/sys/net/ipv4/tcp_available_congestion_control", "Available TCP Congestion Control Algorithms")
-        // Notice: here we use a regular space, and not double-escaped
-        return available?.split("\\s+".toRegex())?.filter { it.isNotBlank() } ?: emptyList()
-    }
-
-    suspend fun getTcpCongestionAlgorithm(): String {
-        return getCurrentTcpCongestionAlgorithm() ?: "Unknown"
-    }
-
-    suspend fun setTcpCongestionAlgorithm(algorithm: String): Boolean {
-        // First check if the algorithm is available
-        val availableAlgorithms = getAvailableTcpCongestionAlgorithms()
-        if (!availableAlgorithms.contains(algorithm)) {
-            return false
-        }
-
-        return writeStringToFile("/proc/sys/net/ipv4/tcp_congestion_control", algorithm, "TCP Congestion Control Algorithm")
-    }
-
-    suspend fun getAvailableTcpCongestionAlgorithmsList(): List<String> {
-        return getAvailableTcpCongestionAlgorithms()
-    }
-
-    // GPU Throttling functions
-    private fun getGpuThrottlingPath(): String? {
-        return KernelPaths.GPU_THROTTLING.find { File(it).exists() }
-    }
-
-    private suspend fun getGpuThrottlingStatus(): Boolean? {
-        val path = getGpuThrottlingPath() ?: return null
-        val result = readFileToString(path, "GPU Throttling Status")
-        return when (result?.trim()) {
-            "1", "Y", "yes", "on", "enabled" -> true
-            "0", "N", "no", "off", "disabled" -> false
-            else -> null
-        }
-    }
-
-    suspend fun isGpuThrottlingEnabled(): Boolean {
-        return getGpuThrottlingStatus() ?: false
-    }
-
-    suspend fun setGpuThrottling(enabled: Boolean): Boolean {
-        val path = getGpuThrottlingPath() ?: return false
-        val value = if (enabled) "1" else "0"
-        return writeStringToFile(path, value, "GPU Throttling")
-    }
-
-    // I/O Scheduler functions
-    private suspend fun getCurrentIoScheduler(): String {
-        // Try multiple possible paths for different devices
-        val paths = listOf(
-            "/sys/block/sda/queue/scheduler",  // Common path
-            "/sys/block/mmcblk0/queue/scheduler",  // Alternative for some devices
-            "/sys/block/sdb/queue/scheduler",  // USB storage
-            "/sys/block/nvme0n1/queue/scheduler"  // NVMe storage
-        )
-        
-        for (path in paths) {
-            val result = readFileToString(path, "I/O Scheduler from $path")
-            if (result != null) {
-                // Find the active scheduler (the one in brackets [scheduler])
-                val activeMatch = Regex("""\[(\w+)]""").find(result)
-                return activeMatch?.groupValues?.get(1) ?: "N/A"
-            }
-        }
-        return "N/A"
-    }
-
-    private suspend fun getAvailableIoSchedulers(): List<String> {
-        // Try multiple possible paths for different devices
-        val paths = listOf(
-            "/sys/block/sda/queue/scheduler",
-            "/sys/block/mmcblk0/queue/scheduler",
-            "/sys/block/sdb/queue/scheduler",
-            "/sys/block/nvme0n1/queue/scheduler"
-        )
-        
-        for (path in paths) {
-            val result = readFileToString(path, "Available I/O Schedulers from $path")
-            if (result != null) {
-                // Extract all schedulers, removing brackets from the active one
-                val schedulers = Regex("""\[(\w+)]|(\w+)""")
-                    .findAll(result)
-                    .map { matchResult ->
-                        val active = matchResult.groupValues[1]
-                        val inactive = matchResult.groupValues[2]
-                        active.ifEmpty { inactive }
-                    }
-                    .filter { it.isNotEmpty() }
-                    .toList()
-                return schedulers
-            }
-        }
-        return emptyList()
-    }
-
-    suspend fun getIoScheduler(): String {
-        return getCurrentIoScheduler()
-    }
-
-    suspend fun setIoScheduler(scheduler: String): Boolean {
-        // First, verify that the scheduler is available
-        val availableSchedulers = getAvailableIoSchedulers()
-        if (!availableSchedulers.contains(scheduler)) {
-            return false
-        }
-        
-        // Try multiple possible paths for different devices
-        val paths = listOf(
-            "/sys/block/sda/queue/scheduler",
-            "/sys/block/mmcblk0/queue/scheduler", 
-            "/sys/block/sdb/queue/scheduler",
-            "/sys/block/nvme0n1/queue/scheduler"
-        )
-        
-        for (path in paths) {
-            // Verify the path exists and is writable
-            val testResult = readFileToString(path, "Testing I/O Scheduler Path $path")
-            if (testResult != null) {
-                return writeStringToFile(path, scheduler, "I/O Scheduler Setting")
-            }
-        }
-        
-        return false
-    }
-
-    suspend fun getAvailableIoSchedulersList(): List<String> {
-        return getAvailableIoSchedulers()
-    }
+    // I/O Scheduler — delegated to KernelFeatureRepository
+    suspend fun getIoScheduler(): String = kernelFeatures.getIoScheduler()
+    suspend fun setIoScheduler(scheduler: String): Boolean = kernelFeatures.setIoScheduler(scheduler)
+    suspend fun getAvailableIoSchedulersList(): List<String> = kernelFeatures.getAvailableIoSchedulersList()
 
     suspend fun getCpuClusters(): List<CpuCluster> {
 
