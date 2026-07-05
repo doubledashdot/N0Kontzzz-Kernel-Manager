@@ -147,32 +147,32 @@ fun AppProfilesScreen(
                         }
                     }
                 }
-            } else if (profiles == null) {
-                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            } else when (val list = profiles) {
+                null -> Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     IndeterminateExpressiveLoadingIndicator()
                 }
-            } else if (profiles!!.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.app_profiles_no_profiles))
-                }
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    itemsIndexed(profiles!!) { index, profile ->
-                        val shape = when {
-                            profiles!!.size == 1 -> RoundedCornerShape(24.dp) // Single item
-                            index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 8.dp, bottomEnd = 8.dp) // First item
-                            index == profiles!!.lastIndex -> RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 24.dp, bottomEnd = 24.dp) // Last item
-                            else -> RoundedCornerShape(8.dp) // Middle items
+                else -> when {
+                    list.isEmpty() -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(stringResource(R.string.app_profiles_no_profiles))
+                    }
+                    else -> LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        itemsIndexed(list) { index, profile ->
+                            val shape = when {
+                                list.size == 1 -> RoundedCornerShape(24.dp)
+                                index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 8.dp, bottomEnd = 8.dp)
+                                index == list.lastIndex -> RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                                else -> RoundedCornerShape(8.dp)
+                            }
+                            AppProfileItem(
+                                profile = profile,
+                                onEdit = { profileToEdit = it },
+                                onDelete = { viewModel.deleteProfile(it) },
+                                cardShape = shape
+                            )
                         }
-                        AppProfileItem(
-                            profile = profile,
-                            onEdit = { profileToEdit = it },
-                            onDelete = { viewModel.deleteProfile(it) },
-                            cardShape = shape
-                        )
                     }
                 }
             }
@@ -204,9 +204,9 @@ fun AppProfilesScreen(
             }
         }
 
-        if (profileToEdit != null) {
+        profileToEdit?.let { profile ->
             AppProfileConfigDialog(
-                profile = profileToEdit!!,
+                profile = profile,
                 isKgslFeatureAvailable = isKgslFeatureAvailable == true,
                 isAvoidDirtyPteAvailable = isAvoidDirtyPteAvailable == true,
                 isPowersaveAvailable = isPowersaveAvailable,

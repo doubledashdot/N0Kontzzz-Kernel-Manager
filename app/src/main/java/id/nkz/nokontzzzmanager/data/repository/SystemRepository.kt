@@ -166,7 +166,7 @@ class SystemRepository @Inject constructor(
     private var cachedGlVersion: String? = null
 
     private fun getDetailedGlVersion(): String {
-        if (cachedGlVersion != null && cachedGlVersion!!.isNotEmpty()) return cachedGlVersion!!
+        if (cachedGlVersion != null && cachedGlVersion.isNotEmpty()) return cachedGlVersion
 
         // 1. Try basic ActivityManager first as fallback
         var version = try {

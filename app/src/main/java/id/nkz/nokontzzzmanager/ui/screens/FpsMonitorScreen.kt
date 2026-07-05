@@ -307,7 +307,7 @@ fun FpsMonitorScreen(
 
         if (selectedBenchmark != null) {
             BenchmarkDetailDialog(
-                benchmark = selectedBenchmark!!,
+                benchmark = selectedBenchmark,
                 onDismiss = { selectedBenchmark = null }
             )
         }
