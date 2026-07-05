@@ -1,4 +1,4 @@
-package id.nkz.nokontzzzmanager.ui.screens
+package id.nkz.nokontzzzmanager.ui.dialog
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring

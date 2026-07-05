@@ -1,4 +1,4 @@
-package id.nkz.nokontzzzmanager.ui.screens
+package id.nkz.nokontzzzmanager.ui.components
 
 import android.os.Build
 import androidx.compose.foundation.background

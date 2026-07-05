@@ -1,4 +1,4 @@
-package id.nkz.nokontzzzmanager.ui.screens
+package id.nkz.nokontzzzmanager.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
