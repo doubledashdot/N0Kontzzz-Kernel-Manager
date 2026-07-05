@@ -30,13 +30,12 @@ class TuningViewModel @Inject constructor(
     private val preferenceManager: PreferenceManager
 ) : AndroidViewModel(application) {
 
-    // performancePrefs, KEY_LAST_APPLIED_PERFORMANCE_MODE removed; thermal index via PreferenceManager
-
+    // ponytail: Poco F4 static fallback; replaced by fetchDynamicCpuClusters() at runtime
     val cpuClusters = listOf("cpu0", "cpu4", "cpu7")
 
     //<editor-fold desc="StateFlows">
     // Dynamic cluster information with proper names
-    private val _dynamicCpuClusters = MutableStateFlow<List<String>>(emptyList())
+    private val _dynamicCpuClusters = MutableStateFlow<List<String>>(cpuClusters)
     val dynamicCpuClusters: StateFlow<List<String>> = _dynamicCpuClusters.asStateFlow()
 
     // UI State for card expansion
@@ -103,14 +102,6 @@ class TuningViewModel @Inject constructor(
     private val _availableCpuFrequenciesPerClusterMap = MutableStateFlow<Map<String, List<Int>>>(emptyMap())
     private val _currentCpuGovernors = mutableMapOf<String, MutableStateFlow<String>>()
     private val _currentCpuFrequencies = mutableMapOf<String, MutableStateFlow<Pair<Int, Int>>>()
-
-    // Initialize these eagerly to ensure non-null flows for combine
-    init {
-        cpuClusters.forEach { cluster ->
-            _currentCpuGovernors.getOrPut(cluster) { MutableStateFlow("...") }
-            _currentCpuFrequencies.getOrPut(cluster) { MutableStateFlow(0 to 0) }
-        }
-    }
 
     // Logic to validate active performance mode based on real-time governor state
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -308,9 +299,6 @@ class TuningViewModel @Inject constructor(
             refreshCoreStates()
             
             // Wait for dynamic clusters to be loaded
-            while (_dynamicCpuClusters.value.isEmpty()) {
-                delay(50)
-            }
             val clusters = _dynamicCpuClusters.value
 
             // Allow time for flows to emit initial values
@@ -559,9 +547,6 @@ class TuningViewModel @Inject constructor(
         val tempFreqs = mutableMapOf<String, List<Int>>()
         
         // Wait for dynamic clusters to be loaded
-        while (_dynamicCpuClusters.value.isEmpty()) {
-            delay(50)
-        }
         val clusters = _dynamicCpuClusters.value
 
         try {
