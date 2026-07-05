@@ -15,4 +15,9 @@
 local.properties
 gradle.properties
 .hprof
-.gitignore
+
+# Release artifacts
+/app/release/
+
+# Agent workspace
+.omo/
