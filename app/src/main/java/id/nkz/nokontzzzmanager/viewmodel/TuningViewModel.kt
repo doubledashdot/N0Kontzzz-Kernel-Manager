@@ -100,8 +100,8 @@ class TuningViewModel @Inject constructor(
     val generalAvailableCpuGovernors: StateFlow<List<String>> = _generalAvailableCpuGovernors.asStateFlow()
 
     private val _availableCpuFrequenciesPerClusterMap = MutableStateFlow<Map<String, List<Int>>>(emptyMap())
-    private val _currentCpuGovernors = mutableMapOf<String, MutableStateFlow<String>>()
-    private val _currentCpuFrequencies = mutableMapOf<String, MutableStateFlow<Pair<Int, Int>>>()
+    private val _currentCpuGovernors = java.util.concurrent.ConcurrentHashMap<String, MutableStateFlow<String>>()
+    private val _currentCpuFrequencies = java.util.concurrent.ConcurrentHashMap<String, MutableStateFlow<Pair<Int, Int>>>()
 
     // Logic to validate active performance mode based on real-time governor state
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -585,11 +585,11 @@ class TuningViewModel @Inject constructor(
                         try {
                             repo.getCpuFreq(cluster).take(1).collect { pair ->
                                 _currentCpuFrequencies[cluster]?.value = pair
-                                // Cache for instant pre-seed on next launch
-                                if (pair.first > 0 && pair.second > 0) {
-                                    preferenceManager.setCpuMinFreq(cluster, pair.first)
-                                    preferenceManager.setCpuMaxFreq(cluster, pair.second)
-                                }
+                                 // Cache MHz (not raw kHz) for instant pre-seed on next launch
+                                 if (pair.first > 0 && pair.second > 0) {
+                                     preferenceManager.setCpuMinFreq(cluster, pair.first / 1000)
+                                     preferenceManager.setCpuMaxFreq(cluster, pair.second / 1000)
+                                 }
                             }
                         } catch (e: Exception) {
                             Log.e("TuningVM_CPU", "Error fetching CPU frequency for $cluster", e)
@@ -934,18 +934,6 @@ class TuningViewModel @Inject constructor(
                 .collect { index ->
                     _currentThermalModeIndex.value = index
                 }
-        }
-    }
-
-    private suspend fun applyLastSavedThermalProfile() {
-        try {
-            val idx = preferenceManager.getLastAppliedThermalIndex(-1)
-            val profile = thermalRepo.availableThermalProfiles.find { it.index == idx }
-            if (profile != null && _currentThermalModeIndex.value != idx) {
-                setThermalProfileInternal(profile, isRestoring = true)
-            }
-        } catch (e: Exception) {
-            // ignore
         }
     }
 

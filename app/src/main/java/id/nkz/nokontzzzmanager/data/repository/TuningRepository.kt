@@ -126,11 +126,6 @@ class TuningRepository @Inject constructor(
             return executeShellCommandFallback(cmd)
         }
     }
-    private fun runShellCommand(cmd: String): Boolean {
-        return runTuningCommand(cmd)
-    }
-
-
     private fun readShellCommand(cmd: String): String {
         if (isSuShellWorking) {
             try {
