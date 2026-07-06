@@ -734,7 +734,6 @@ class TuningViewModel @Inject constructor(
             preferenceManager.setGpuMinFreq(freqKHz)
             val (min, _) = repo.getGpuFreq().first()
             _currentGpuMinFreq.value = min
-            fetchGpuData()
         }
     }
 
@@ -743,7 +742,6 @@ class TuningViewModel @Inject constructor(
             preferenceManager.setGpuMaxFreq(freqKHz)
             val (_, max) = repo.getGpuFreq().first()
             _currentGpuMaxFreq.value = max
-            fetchGpuData()
         }
     }
 
