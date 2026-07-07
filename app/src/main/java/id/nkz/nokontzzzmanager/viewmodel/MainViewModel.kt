@@ -44,17 +44,9 @@ class MainViewModel @Inject constructor(
             val versionLine = rootRepo.run("cat /proc/version")
 
             if (versionLine.isNotBlank()) {
-                // Special check for E404R kernel (keep it here because special case)
-                val e404rMatch = (versionLine.contains("4.19.404R", ignoreCase = true) || 
-                                  versionLine.contains("5.10.404R", ignoreCase = true))
-                val hostMatch = (versionLine.contains("vyn", ignoreCase = true) && 
-                                (versionLine.contains("fedora", ignoreCase = true) || 
-                                versionLine.contains("zorin", ignoreCase = true))) ||
-                                (versionLine.contains("senx", ignoreCase = true) && 
-                                versionLine.contains("ASUS-VIVOBOOK", ignoreCase = true))
-                val buildHostMatch = versionLine.contains("build-user@build-host", ignoreCase = true)
-
-                if (e404rMatch && (hostMatch || buildHostMatch)) {
+                // E404R: string match only, no host check
+                if (versionLine.contains("4.19.404R", ignoreCase = true) ||
+                    versionLine.contains("5.10.404R", ignoreCase = true)) {
                     return true
                 }
 
