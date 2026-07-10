@@ -16,6 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,11 +62,15 @@ fun HomeScreen(
     }
 
     // Kumpulkan semua state dari ViewModel
-    val cpuInfo by vm.cpuInfo.collectAsStateWithLifecycle()
-    val gpuInfo by vm.gpuInfo.collectAsStateWithLifecycle()
-    val batteryInfo by vm.batteryInfo.collectAsStateWithLifecycle()
-    val memoryInfo by vm.memoryInfo.collectAsStateWithLifecycle()
-    val deepSleepInfo by vm.deepSleep.collectAsStateWithLifecycle()
+    // ponytail: RESUMED so WhileSubscribed(5000) actually fires when Activity backgrounds.
+    // STARTED (the default) keeps collectors alive while backgrounded — polling never stops.
+    val cpuInfo by vm.cpuInfo.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+    val gpuInfo by vm.gpuInfo.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+    val batteryInfo by vm.batteryInfo.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+    val memoryInfo by vm.memoryInfo.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+    val deepSleepInfo by vm.deepSleep.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+    val graphData by vm.graphData.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+    // static data — STARTED is fine, no polling involved
     val rootStatus by vm.rootStatus.collectAsStateWithLifecycle()
     val kernelInfo by vm.kernelInfo.collectAsStateWithLifecycle()
     val appVersion by vm.appVersion.collectAsStateWithLifecycle()
@@ -73,7 +78,6 @@ fun HomeScreen(
     val cpuClusters by vm.cpuClusters.collectAsStateWithLifecycle()
     val storageInfo by storageViewModel.storageInfo.collectAsStateWithLifecycle()
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
-    val graphData by vm.graphData.collectAsStateWithLifecycle()
 
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()

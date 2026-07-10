@@ -559,7 +559,7 @@ class SystemRepository @Inject constructor(
         }
     }.shareIn(
         scope = repositoryScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.WhileSubscribed(0),
         replay = 1
     )
 
