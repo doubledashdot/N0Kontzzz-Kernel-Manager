@@ -246,11 +246,11 @@ class BatteryMonitorService : Service() {
 
         val pm = getSystemService(POWER_SERVICE) as PowerManager
 
-        monitoringJob = scope.launch(Dispatchers.Main.immediate) {
+        monitoringJob = scope.launch(Dispatchers.Default) {
             // Initial update
             try {
                 val stats = withContext(Dispatchers.IO) { collectSystemStats() }
-                updateNotification(stats)
+                withContext(Dispatchers.Main) { updateNotification(stats) }
             } catch (e: Exception) {
                 Log.e("BatteryMonitorService", "Initial update failed", e)
             }
@@ -259,11 +259,11 @@ class BatteryMonitorService : Service() {
                 try {
                     Log.d("BatteryMonitorService", "Heartbeat: Loop tick (Interactive=${pm.isInteractive})")
                     val stats = withContext(Dispatchers.IO) { collectSystemStats() }
-                    updateNotification(stats)
+                    withContext(Dispatchers.Main) { updateNotification(stats) }
                 } catch (e: Exception) {
                     Log.e("BatteryMonitorService", "Error in monitoring loop", e)
                 }
-                
+
                 // Adaptive delay: 5s if screen on, 60s if screen off
                 val d = nextDelayOverrideMs ?: if (pm.isInteractive) 5_000L else 60_000L
                 nextDelayOverrideMs = null
