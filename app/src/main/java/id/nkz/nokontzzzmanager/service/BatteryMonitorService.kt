@@ -529,9 +529,9 @@ class BatteryMonitorService : Service() {
             screenOnStartAtElapsed = SystemClock.elapsedRealtime()
             // Instant refresh when service starts and screen is already on
             try {
-                scope.launch {
+                scope.launch(Dispatchers.Default) {
                     val stats = collectSystemStats()
-                    updateNotification(stats)
+                    withContext(Dispatchers.Main) { updateNotification(stats) }
                 }
                 nextDelayOverrideMs = 5_000L
             } catch (_: Exception) { }
@@ -545,9 +545,9 @@ class BatteryMonitorService : Service() {
                         }
                         // Instant refresh on screen ON
                         try {
-                            scope.launch {
+                            scope.launch(Dispatchers.Default) {
                                 val stats = collectSystemStats()
-                                updateNotification(stats)
+                                withContext(Dispatchers.Main) { updateNotification(stats) }
                             }
                             nextDelayOverrideMs = 5_000L
                         } catch (_: Exception) { }
@@ -563,9 +563,9 @@ class BatteryMonitorService : Service() {
                     Intent.ACTION_USER_PRESENT -> {
                         // User unlocked: ensure latest numbers shown immediately
                         try {
-                            scope.launch {
+                            scope.launch(Dispatchers.Default) {
                                 val stats = collectSystemStats()
-                                updateNotification(stats)
+                                withContext(Dispatchers.Main) { updateNotification(stats) }
                             }
                             nextDelayOverrideMs = 5_000L
                         } catch (_: Exception) { }
@@ -645,9 +645,9 @@ class BatteryMonitorService : Service() {
         // Tampilkan status charging seketika tanpa menunggu interval berikutnya
         try {
             lastCurrent = 0f
-            scope.launch {
+            scope.launch(Dispatchers.Default) {
                 val stats = collectSystemStats()
-                updateNotification(stats)
+                withContext(Dispatchers.Main) { updateNotification(stats) }
             }
             nextDelayOverrideMs = 5_000L
         } catch (_: Exception) { }
@@ -685,9 +685,9 @@ class BatteryMonitorService : Service() {
         persistState(sync = true)
         // Instant refresh to reflect discharging state without waiting for the next tick
         try {
-            scope.launch {
+            scope.launch(Dispatchers.Default) {
                 val stats = collectSystemStats()
-                updateNotification(stats)
+                withContext(Dispatchers.Main) { updateNotification(stats) }
             }
             nextDelayOverrideMs = 5_000L
         } catch (_: Exception) { }
@@ -720,7 +720,7 @@ class BatteryMonitorService : Service() {
 
     private fun fullReset() {
         if (isUserUnlocked(this)) {
-            scope.launch {
+            scope.launch(Dispatchers.IO) {
                 try {
                     batteryGraphRepository.deleteAllEntries()
                 } catch (_: Exception) { }
@@ -728,7 +728,10 @@ class BatteryMonitorService : Service() {
         }
         manualReset()
         try {
-            updateNotification(collectSystemStats())
+            scope.launch(Dispatchers.Default) {
+                val stats = collectSystemStats()
+                withContext(Dispatchers.Main) { updateNotification(stats) }
+            }
         } catch (_: Exception) {}
     }
 
@@ -1061,18 +1064,12 @@ class BatteryMonitorService : Service() {
         
         val notification = createNotification(title, bigText, stats.level, stats.isCharging)
         
-        // Use startForeground to refresh foreground status and update notification simultaneously
-        // This is more resilient on aggressive ROMs than just notificationManager.notify
+        // Only notify — service is already foregrounded in onCreate.
+        // startForeground() every tick causes periodic main-thread wakeups
+        // via system_server IPC, producing frame jitter (0.9ms → 0.17ms oscillation).
         try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            } else {
-                startForeground(notificationId, notification)
-            }
-        } catch (e: Exception) {
-            // Fallback to basic notify if startForeground fails (e.g. if called from background incorrectly)
             notificationManager.notify(notificationId, notification)
-        }
+        } catch (_: Exception) { }
     }
 
     private fun formatDurationAdaptive(ms: Long): String {
