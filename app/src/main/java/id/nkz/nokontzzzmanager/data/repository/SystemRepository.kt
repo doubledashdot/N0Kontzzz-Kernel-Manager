@@ -64,6 +64,7 @@ class SystemRepository @Inject constructor(
     private val batteryMonitor: BatteryMonitorProvider,
     private val memoryMonitor: MemoryMonitorProvider,
     private val kernelInfoProvider: KernelInfoProvider,
+    private val nativeTelemetryReader: NativeTelemetryReader,
 ) {
 
     companion object {
@@ -249,29 +250,32 @@ class SystemRepository @Inject constructor(
     }
 
     private suspend fun getGpuRealtimeInternal(): RealtimeGpuInfo {
-        var currentFreq = 0
-        var maxFreq = 0
-        var usage = 0
+        val nativeGpu = nativeTelemetryReader.readSnapshot()?.gpu
+        var currentFreq = nativeGpu?.currentFreqHz?.takeIf { it > 0L }?.div(1_000_000L)?.toInt()
+        var maxFreq = nativeGpu?.maxFreqHz?.takeIf { it > 0L }?.div(1_000_000L)?.toInt()
+        var usage = nativeGpu?.usagePercent?.takeIf { it in 0..100 }
         val gpuModel = getGpuModel()
         val glVersion = getDetailedGlVersion() // Use the detailed fetcher
         
         try {
             // Get current GPU frequency from TuningRepository
-            currentFreq = tuningRepository.getCurrentGpuFreq().firstOrNull() ?: 0
+            if (currentFreq == null) currentFreq = tuningRepository.getCurrentGpuFreq().firstOrNull() ?: 0
             
             // Get max GPU frequency from TuningRepository
-            val (_, max) = tuningRepository.getGpuFreq().firstOrNull() ?: (0 to 0)
-            maxFreq = max
+            if (maxFreq == null) {
+                val (_, max) = tuningRepository.getGpuFreq().firstOrNull() ?: (0 to 0)
+                maxFreq = max
+            }
             
             // Get GPU usage from TuningRepository
-            usage = tuningRepository.getGpuUsage().firstOrNull() ?: 0
+            if (usage == null) usage = tuningRepository.getGpuUsage().firstOrNull() ?: 0
         } catch (e: Exception) {
         }
         
         return RealtimeGpuInfo(
-            usagePercentage = usage.toFloat(),
-            currentFreq = currentFreq,
-            maxFreq = maxFreq,
+            usagePercentage = (usage ?: 0).toFloat(),
+            currentFreq = currentFreq ?: 0,
+            maxFreq = maxFreq ?: 0,
             model = gpuModel,
             glVersion = glVersion
         )

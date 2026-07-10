@@ -22,6 +22,7 @@ import id.nkz.nokontzzzmanager.data.repository.CpuMonitorProvider
 import id.nkz.nokontzzzmanager.data.repository.KernelFeatureRepository
 import id.nkz.nokontzzzmanager.data.repository.KernelInfoProvider
 import id.nkz.nokontzzzmanager.data.repository.MemoryMonitorProvider
+import id.nkz.nokontzzzmanager.data.repository.NativeTelemetryReader
 import id.nkz.nokontzzzmanager.data.repository.RootRepository
 import id.nkz.nokontzzzmanager.data.repository.SysfsHelper
 import id.nkz.nokontzzzmanager.data.repository.SystemRepository
@@ -61,8 +62,9 @@ object AppModule {
         batteryMonitor: BatteryMonitorProvider,
         memoryMonitor: MemoryMonitorProvider,
         kernelInfoProvider: KernelInfoProvider,
+        nativeTelemetryReader: NativeTelemetryReader,
     ): SystemRepository =
-        SystemRepository(context, tuningRepository, rootRepository, sysfsHelper, kernelFeatures, cpuMonitor, batteryMonitor, memoryMonitor, kernelInfoProvider)
+        SystemRepository(context, tuningRepository, rootRepository, sysfsHelper, kernelFeatures, cpuMonitor, batteryMonitor, memoryMonitor, kernelInfoProvider, nativeTelemetryReader)
 
     @Provides
     @Singleton

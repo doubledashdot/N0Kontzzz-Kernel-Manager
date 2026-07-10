@@ -10,6 +10,7 @@ import javax.inject.Singleton
 @Singleton
 class CpuMonitorProvider @Inject constructor(
     private val sysfsHelper: SysfsHelper,
+    private val nativeTelemetryReader: NativeTelemetryReader,
 ) {
     companion object {
         private const val VALUE_NOT_AVAILABLE = "N/A"
@@ -22,10 +23,39 @@ class CpuMonitorProvider @Inject constructor(
     var socModel: String = "Unknown"
 
     private suspend fun getCpuRealtimeInternal(): RealtimeCpuInfo {
+        val nativeSnapshot = nativeTelemetryReader.readSnapshot()
+        val nativeCpu = nativeSnapshot?.cpu.orEmpty()
+        val nativeThermal = nativeSnapshot?.thermal.orEmpty()
+        if (nativeCpu.isNotEmpty()) {
+            val cores = Runtime.getRuntime().availableProcessors()
+            val frequencies = List(cores) { coreIndex ->
+                nativeCpu.firstOrNull { it.core == coreIndex }
+                    ?.currentFreqKhz
+                    ?.takeIf { it > 0L }
+                    ?.div(1000L)
+                    ?.toInt()
+                    ?: readCpuFrequency(coreIndex)
+            }
+            val governor = nativeCpu.firstNotNullOfOrNull { it.governor?.takeIf(String::isNotBlank) }
+                ?: readCpuGovernor()
+            val temperature = nativeThermal.firstOrNull { zone ->
+                zone.type?.contains("cpu", ignoreCase = true) == true
+            }?.tempMilliCelsius?.div(1000f)
+                ?: nativeThermal.firstOrNull()?.tempMilliCelsius?.div(1000f)
+                ?: readCpuTemperature()
+
+            return RealtimeCpuInfo(
+                cores = cores,
+                governor = governor,
+                freqs = frequencies,
+                temp = temperature,
+                soc = socModel,
+                cpuLoadPercentage = calculateCpuLoadPercentage()
+            )
+        }
+
         val cores = Runtime.getRuntime().availableProcessors()
-        val governor = sysfsHelper.readFileToString(
-            "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "CPU0 Governor"
-        ) ?: VALUE_NOT_AVAILABLE
+        val governor = readCpuGovernor()
 
         val frequencies = List(cores) { coreIndex ->
             val onlineStr = sysfsHelper.readFileToString(
@@ -33,15 +63,11 @@ class CpuMonitorProvider @Inject constructor(
             )
             val isOnline = onlineStr == null || onlineStr.trim() != "0"
             if (isOnline) {
-                val freqStr = sysfsHelper.readFileToString(
-                    "/sys/devices/system/cpu/cpu$coreIndex/cpufreq/scaling_cur_freq", "CPU$coreIndex Freq"
-                )
-                (freqStr?.toLongOrNull()?.div(1000))?.toInt() ?: 0
+                readCpuFrequency(coreIndex)
             } else 0
         }
 
-        val tempStr = sysfsHelper.readFileToString("/sys/class/thermal/thermal_zone0/temp", "Thermal Zone0 Temp")
-        val temperature = (tempStr?.toFloatOrNull()?.div(1000)) ?: 0f
+        val temperature = readCpuTemperature()
 
         val cpuLoadPercentage = calculateCpuLoadPercentage()
 
@@ -53,6 +79,22 @@ class CpuMonitorProvider @Inject constructor(
             soc = socModel,
             cpuLoadPercentage = cpuLoadPercentage
         )
+    }
+
+    private suspend fun readCpuGovernor(): String = sysfsHelper.readFileToString(
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "CPU0 Governor"
+    ) ?: VALUE_NOT_AVAILABLE
+
+    private suspend fun readCpuFrequency(coreIndex: Int): Int {
+        val freqStr = sysfsHelper.readFileToString(
+            "/sys/devices/system/cpu/cpu$coreIndex/cpufreq/scaling_cur_freq", "CPU$coreIndex Freq"
+        )
+        return (freqStr?.toLongOrNull()?.div(1000))?.toInt() ?: 0
+    }
+
+    private suspend fun readCpuTemperature(): Float {
+        val tempStr = sysfsHelper.readFileToString("/sys/class/thermal/thermal_zone0/temp", "Thermal Zone0 Temp")
+        return (tempStr?.toFloatOrNull()?.div(1000)) ?: 0f
     }
 
     private suspend fun calculateCpuLoadPercentage(): Float? {

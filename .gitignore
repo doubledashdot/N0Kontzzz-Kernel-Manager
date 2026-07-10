@@ -19,5 +19,14 @@ gradle.properties
 # Release artifacts
 /app/release/
 
+# Debug artifacts
+/app/debug/
+
+# Rust build output
+/native/telemetry/target/
+
+# Docs (plans, notes)
+/docs/
+
 # Agent workspace
 .omo/

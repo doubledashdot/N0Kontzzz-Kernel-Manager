@@ -6,6 +6,52 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+import org.gradle.api.GradleException
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
+
+abstract class BuildNativeTelemetryTask @Inject constructor(
+    private val execOperations: ExecOperations,
+) : DefaultTask() {
+    @get:InputDirectory
+    abstract val crateDir: DirectoryProperty
+
+    @get:Input
+    abstract val target: Property<String>
+
+    @get:Input
+    abstract val cargoExecutable: Property<String>
+
+    @get:Input
+    @get:Optional
+    abstract val ndkHome: Property<String>
+
+    init {
+        group = "build"
+        description = "Builds the optional Rust JNI telemetry library. Requires Android NDK and a Rust Android target."
+    }
+
+    @TaskAction
+    fun build() {
+        if (!ndkHome.isPresent) {
+            throw GradleException("Native telemetry build requires ANDROID_NDK_HOME or ANDROID_NDK_ROOT to point at an installed Android NDK.")
+        }
+
+        execOperations.exec {
+            workingDir = crateDir.get().asFile
+            environment("ANDROID_NDK_HOME", ndkHome.get())
+            commandLine(cargoExecutable.get(), "build", "--release", "--target", target.get())
+        }
+    }
+}
+
 configure <com.android.build.api.dsl.ApplicationExtension> {
     namespace = "id.nkz.nokontzzzmanager"
     compileSdk = 37
@@ -14,7 +60,7 @@ configure <com.android.build.api.dsl.ApplicationExtension> {
         applicationId = "id.nkz.nokontzzzmanager"
         minSdk = 31
         targetSdk = 36
-        versionCode = 120
+        versionCode = 121
         versionName = "2.0.0-beta"
     }
     buildTypes {
@@ -32,6 +78,33 @@ configure <com.android.build.api.dsl.ApplicationExtension> {
         disable.add("NullSafeMutableLiveData")
     }
     buildFeatures { compose = true }
+}
+
+val nativeTelemetryTarget = providers.gradleProperty("nkmTelemetryTarget")
+    .orElse("aarch64-linux-android")
+val nativeTelemetryAbi = providers.gradleProperty("nkmTelemetryAbi")
+    .orElse("arm64-v8a")
+val nativeTelemetryCrateDir = rootProject.layout.projectDirectory.dir("native/telemetry")
+val nativeTelemetryOutputDir = layout.buildDirectory.dir("generated/jniLibs/${nativeTelemetryAbi.get()}")
+
+tasks.register<BuildNativeTelemetryTask>("buildNativeTelemetry") {
+    val ndkHomeProvider = providers.environmentVariable("ANDROID_NDK_HOME")
+        .orElse(providers.environmentVariable("ANDROID_NDK_ROOT"))
+    val cargo = providers.environmentVariable("CARGO").orElse("cargo")
+
+    crateDir.set(nativeTelemetryCrateDir)
+    target.set(nativeTelemetryTarget)
+    cargoExecutable.set(cargo)
+    ndkHome.set(ndkHomeProvider)
+}
+
+tasks.register<Copy>("copyNativeTelemetry") {
+    group = "build"
+    description = "Copies libnkm_telemetry.so into the app JNI libs staging directory."
+    dependsOn("buildNativeTelemetry")
+
+    from(nativeTelemetryCrateDir.file("target/${nativeTelemetryTarget.get()}/release/libnkm_telemetry.so"))
+    into(nativeTelemetryOutputDir)
 }
 
 configurations.all {

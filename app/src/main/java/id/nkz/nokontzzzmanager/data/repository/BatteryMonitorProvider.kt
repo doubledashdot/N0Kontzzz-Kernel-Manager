@@ -17,6 +17,7 @@ class BatteryMonitorProvider @Inject constructor(
     private val context: Context,
     private val sysfsHelper: SysfsHelper,
     private val kernelFeatures: KernelFeatureRepository,
+    private val nativeTelemetryReader: NativeTelemetryReader,
 ) {
     private fun getBatteryLevelFromApi(): Int {
         val intentFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
@@ -27,11 +28,14 @@ class BatteryMonitorProvider @Inject constructor(
     }
 
     private suspend fun getBatteryInfoInternal(statusFromIntent: Int = -1): BatteryInfo {
+        val nativeBattery = nativeTelemetryReader.readSnapshot()?.battery
         val batteryDir = "/sys/class/power_supply/battery"
-        val batteryLevelStr = sysfsHelper.readFileToString("$batteryDir/capacity", "Battery Level Percent from File")
+        val batteryLevelStr = nativeBattery?.levelPercent?.takeIf { it in 0..100 }?.toString()
+            ?: sysfsHelper.readFileToString("$batteryDir/capacity", "Battery Level Percent from File")
         val finalLevel = batteryLevelStr?.toIntOrNull() ?: getBatteryLevelFromApi().let { if (it == -1) 0 else it }
 
-        var tempStr = sysfsHelper.readFileToString("$batteryDir/temp", "Battery Temperature")
+        var tempStr = nativeBattery?.tempDeciCelsius?.toString()
+            ?: sysfsHelper.readFileToString("$batteryDir/temp", "Battery Temperature")
         var tempSource = "$batteryDir/temp"
         if (tempStr == null) {
             val thermalZoneDirs = File("/sys/class/thermal/").listFiles { dir, name ->
@@ -162,8 +166,9 @@ class BatteryMonitorProvider @Inject constructor(
             "/sys/class/power_supply/bms/voltage_now", "/sys/class/power_supply/main/voltage_now",
             "/sys/class/power_supply/pm8921-bms/voltage_now"
         )
-        var finalVoltage: Float? = null
+        var finalVoltage: Float? = nativeBattery?.voltageMicrovolts?.takeIf { it > 0L }?.toFloat()
         for (path in voltagePaths) {
+            if (finalVoltage != null) break
             val voltageStr = sysfsHelper.readFileToString(path, "Battery Voltage from $path")
             if (voltageStr.isNullOrBlank()) continue
             val cleanedVoltage = buildString {
@@ -173,12 +178,13 @@ class BatteryMonitorProvider @Inject constructor(
             if (voltageValue != null && voltageValue > 0f) { finalVoltage = voltageValue; break }
         }
 
-        var finalCurrent: Float? = null
+        var finalCurrent: Float? = nativeBattery?.currentMicroamps?.toFloat()
         val currentPaths = listOf(
             "$batteryDir/current_now", "$batteryDir/current_avg",
             "/sys/class/power_supply/bms/current_now", "/sys/class/power_supply/usb/current_now"
         )
         for (path in currentPaths) {
+            if (finalCurrent != null) break
             val currentStr = sysfsHelper.readFileToString(path, "Battery Current from $path")
             if (currentStr != null) { finalCurrent = currentStr.toFloatOrNull(); break }
         }
@@ -192,7 +198,8 @@ class BatteryMonitorProvider @Inject constructor(
         }
 
         val finalTechnology = sysfsHelper.readFileToString("$batteryDir/technology", "Battery Technology")
-        val statusString = sysfsHelper.readFileToString("$batteryDir/status", "Battery Status")
+        val statusString = nativeBattery?.status?.takeIf { it.isNotBlank() }
+            ?: sysfsHelper.readFileToString("$batteryDir/status", "Battery Status")
 
         val isCharging = when {
             statusFromIntent != -1 && statusFromIntent != BatteryManager.BATTERY_STATUS_UNKNOWN ->
