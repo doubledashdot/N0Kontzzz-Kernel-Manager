@@ -2,7 +2,7 @@ package id.nkz.nokontzzzmanager.viewmodel
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Log // Import Log
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,33 +32,73 @@ class HomeViewModel @Inject constructor(
     private val rootRepo: RootRepository
 ) : ViewModel() {
 
+    private val _isScrolling = MutableStateFlow(false)
+    private val _cpuGraphMode = MutableStateFlow(GraphMode.LOAD)
 
-    private val _cpuInfo = MutableStateFlow(
-        RealtimeCpuInfo(
-            cores = 0,
-            governor = "N/A",
-            freqs = emptyList(),
-            temp = 0f,
-            soc = "N/A",
-            cpuLoadPercentage = null
+    fun setCPUGraphMode(mode: GraphMode) { _cpuGraphMode.value = mode }
+
+    // ponytail: single upstream subscription — WhileSubscribed stops polling when all UI collectors
+    // unsubscribe (i.e. Activity backgrounded). Previously init{} launch was a permanent subscriber
+    // that kept the 1s polling loop alive forever.
+    private val realtimeFlow: StateFlow<RealtimeAggregatedInfo?> = _isScrolling
+        .flatMapLatest { isScrolling ->
+            if (isScrolling) emptyFlow()
+            else systemRepo.realtimeAggregatedInfoFlow
+                .catch { e -> Log.e("HomeViewModel", "Error in realtimeAggregatedInfoFlow: ${e.message}", e) }
+                .sample(500L)
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(0),
+            initialValue = null
         )
-    )
-    val cpuInfo: StateFlow<RealtimeCpuInfo> = _cpuInfo.asStateFlow()
 
-    private val _gpuInfo = MutableStateFlow(
-        RealtimeGpuInfo(usagePercentage = null, currentFreq = 0, maxFreq = 0)
-    )
-    val gpuInfo: StateFlow<RealtimeGpuInfo> = _gpuInfo.asStateFlow()
+    val cpuInfo: StateFlow<RealtimeCpuInfo> = realtimeFlow
+        .map { it?.cpuInfo ?: RealtimeCpuInfo(cores = 0, governor = "N/A", freqs = emptyList(), temp = 0f, soc = "N/A", cpuLoadPercentage = null) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            RealtimeCpuInfo(cores = 0, governor = "N/A", freqs = emptyList(), temp = 0f, soc = "N/A", cpuLoadPercentage = null))
 
-    private val _batteryInfo = MutableStateFlow<BatteryInfo?>(null)
-    val batteryInfo: StateFlow<BatteryInfo?> = _batteryInfo.asStateFlow()
+    val gpuInfo: StateFlow<RealtimeGpuInfo> = realtimeFlow
+        .map { it?.gpuInfo ?: RealtimeGpuInfo(usagePercentage = null, currentFreq = 0, maxFreq = 0) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            RealtimeGpuInfo(usagePercentage = null, currentFreq = 0, maxFreq = 0))
 
-    private val _memoryInfo = MutableStateFlow<MemoryInfo?>(null)
-    val memoryInfo: StateFlow<MemoryInfo?> = _memoryInfo.asStateFlow()
+    val batteryInfo: StateFlow<BatteryInfo?> = realtimeFlow
+        .map { it?.batteryInfo }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private val _deepSleep = MutableStateFlow<DeepSleepInfo?>(null)
-    val deepSleep: StateFlow<DeepSleepInfo?> = _deepSleep.asStateFlow()
+    val memoryInfo: StateFlow<MemoryInfo?> = realtimeFlow
+        .map { it?.memoryInfo }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    val deepSleep: StateFlow<DeepSleepInfo?> = realtimeFlow
+        .map { it?.let { info -> DeepSleepInfo(uptime = info.uptimeMillis, deepSleep = info.deepSleepMillis) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    // ponytail: persist accumulator outside scan so history survives flow restarts (WhileSubscribed(0))
+    private val _graphData = MutableStateFlow(GraphData())
+    val graphData: StateFlow<GraphData> = _graphData.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            realtimeFlow.collect { info ->
+                if (info == null) return@collect
+                val cpuInfo = info.cpuInfo
+                val avgSpeed = if (cpuInfo.freqs.isNotEmpty())
+                    cpuInfo.freqs.filter { it > 0 }.map { it.toFloat() }.average().toFloat().takeIf { !it.isNaN() } ?: 0f
+                else 0f
+                val cpuLoad = (cpuInfo.cpuLoadPercentage ?: 0f).coerceIn(0f, 100f)
+                val gpuUsage = (info.gpuInfo.usagePercentage ?: 0f).coerceIn(0f, 100f)
+                _graphData.update { current ->
+                    current.copy(
+                        cpuLoadHistory = (current.cpuLoadHistory + cpuLoad).takeLast(50).toImmutableList(),
+                        cpuSpeedHistory = (current.cpuSpeedHistory + avgSpeed).takeLast(50).toImmutableList(),
+                        gpuHistory = (current.gpuHistory + gpuUsage).takeLast(50).toImmutableList()
+                    )
+                }
+            }
+        }
+    }
 
     private val _kernelInfo = MutableStateFlow<KernelInfo?>(null)
     val kernelInfo: StateFlow<KernelInfo?> = _kernelInfo.asStateFlow()
@@ -85,77 +125,14 @@ class HomeViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _isScrolling = MutableStateFlow(false)
-
-    // Graph Data State
-    private val _graphData = MutableStateFlow(GraphData())
-    val graphData: StateFlow<GraphData> = _graphData.asStateFlow()
-
-    private val isInitialDataLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
-
-    init {
-        // The realtime flow is relatively lightweight to start collecting.
-        // It will begin emitting data as it becomes available.
-        viewModelScope.launch(Dispatchers.Default) {
-            _isScrolling
-                .flatMapLatest { isScrolling ->
-                    if (isScrolling) {
-                        emptyFlow()
-                    } else {
-                        systemRepo.realtimeAggregatedInfoFlow
-                            .catch { e ->
-                                Log.e("HomeViewModel", "Error in realtimeAggregatedInfoFlow: ${e.message}", e)
-                            }
-                            .sample(500L)
-                    }
-                }
-                .collect { aggregatedInfo ->
-                    _cpuInfo.value = aggregatedInfo.cpuInfo
-                    _gpuInfo.value = aggregatedInfo.gpuInfo
-                    _batteryInfo.value = aggregatedInfo.batteryInfo
-                    _memoryInfo.value = aggregatedInfo.memoryInfo
-                    _deepSleep.value = DeepSleepInfo(
-                        uptime = aggregatedInfo.uptimeMillis,
-                        deepSleep = aggregatedInfo.deepSleepMillis
-                    )
-
-                    // Update Graph Data
-                    val cpuInfo = aggregatedInfo.cpuInfo
-                    val gpuInfo = aggregatedInfo.gpuInfo
-
-                    // Calculate CPU Data Points
-                    val avgSpeed = if (cpuInfo.freqs.isNotEmpty()) {
-                        cpuInfo.freqs.filter { it > 0 }.map { it.toFloat() }.average().toFloat().takeIf { !it.isNaN() } ?: 0f
-                    } else 0f
-                    val cpuLoad = (cpuInfo.cpuLoadPercentage ?: 0f).coerceIn(0f, 100f)
-
-                    // Calculate GPU Data Point
-                    val gpuUsage = (gpuInfo.usagePercentage ?: 0f).coerceIn(0f, 100f)
-
-                    // Atomically update graph history
-                    val currentGraph = _graphData.value
-                    _graphData.value = currentGraph.copy(
-                        cpuLoadHistory = (currentGraph.cpuLoadHistory + cpuLoad).takeLast(50).toImmutableList(),
-                        cpuSpeedHistory = (currentGraph.cpuSpeedHistory + avgSpeed).takeLast(50).toImmutableList(),
-                        gpuHistory = (currentGraph.gpuHistory + gpuUsage).takeLast(50).toImmutableList()
-                    )
-                }
-        }
-    }
-
     fun setScrolling(isScrolling: Boolean) {
         _isScrolling.value = isScrolling
     }
 
-    fun setCPUGraphMode(mode: GraphMode) {
-        val current = _graphData.value
-        _graphData.value = current.copy(cpuGraphMode = mode)
-    }
+    private val isInitialDataLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun loadInitialData() {
-        if (isInitialDataLoaded.getAndSet(true)) return
-
-        _isLoading.value = true
+        if (!isInitialDataLoaded.compareAndSet(false, true)) return
         viewModelScope.launch(Dispatchers.IO) {
             val systemInfoDeferred = async { systemRepo.getSystemInfo() }
             val kernelInfoDeferred = async { systemRepo.getKernelInfo() }
@@ -185,6 +162,4 @@ class HomeViewModel @Inject constructor(
         super.onCleared()
         Log.d("HomeViewModel", "onCleared called.")
     }
-
-    
 }
