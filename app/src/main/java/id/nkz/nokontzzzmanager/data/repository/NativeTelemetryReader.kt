@@ -17,11 +17,19 @@ class NativeTelemetryReader(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // ponytail: simple time-based cache — deduplicates JNI+JSON parse across providers
+    // within one polling tick. Upgrade to SharedFlow if providers ever need push-based updates.
+    @Volatile private var cachedSnapshot: TelemetrySnapshot? = null
+    @Volatile private var cacheTimestampMs: Long = 0L
+
     fun readSnapshot(): TelemetrySnapshot? {
         if (!isNativeTelemetryEnabled()) {
             disabledCount.incrementAndGet()
             return null
         }
+        val now = System.currentTimeMillis()
+        cachedSnapshot?.takeIf { now - cacheTimestampMs < CACHE_TTL_MS }?.let { return it }
+
         val rawSnapshot = nativeJsonProvider()
         if (rawSnapshot == null) {
             nativeUnavailableCount.incrementAndGet()
@@ -30,6 +38,8 @@ class NativeTelemetryReader(
         }
         return try {
             val snapshot = json.decodeFromString<TelemetrySnapshot>(rawSnapshot)
+            cachedSnapshot = snapshot
+            cacheTimestampMs = now
             successCount.incrementAndGet()
             if (snapshot.hasPartialData()) partialDataCount.incrementAndGet()
             Log.d(TAG, "native ok — cpu=${snapshot.cpu.size} thermal=${snapshot.thermal.size} gpu=${snapshot.gpu != null} zram=${snapshot.zram != null} battery=${snapshot.battery != null}")
@@ -55,6 +65,7 @@ class NativeTelemetryReader(
 
     companion object {
         private const val TAG = "NativeTelemetry"
+        private const val CACHE_TTL_MS = 750L
 
         @Volatile
         var nativeTelemetryEnabled: Boolean = true

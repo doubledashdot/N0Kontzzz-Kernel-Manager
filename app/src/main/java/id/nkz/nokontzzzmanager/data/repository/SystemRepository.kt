@@ -110,7 +110,7 @@ class SystemRepository @Inject constructor(
     fun getAwakeTime(): Long = batteryMonitor.getAwakeTime()
 
     // Memory — delegated to MemoryMonitorProvider
-    fun getMemoryInfo(): MemoryInfo = memoryMonitor.getMemoryInfo()
+    suspend fun getMemoryInfo(): MemoryInfo = memoryMonitor.getMemoryInfo()
 
     private suspend fun getGpuModel(): String {
         return try {
@@ -499,7 +499,7 @@ class SystemRepository @Inject constructor(
                 cpuInfo = cpuMonitor.getCpuRealtimeSuspend(),
                 gpuInfo = getGpuRealtimeInternal(),
                 batteryInfo = batteryMonitor.getBatteryInfoSuspend(),
-                memoryInfo = memoryMonitor.getMemoryInfoSuspend(),
+                memoryInfo = memoryMonitor.getMemoryInfo(),
                 uptimeMillis = batteryMonitor.getUptimeMillis(),
                 deepSleepMillis = batteryMonitor.getDeepSleepMillis()
             )
@@ -535,7 +535,7 @@ class SystemRepository @Inject constructor(
                     // Fetch non-battery stats
                     val newCpuInfo = cpuMonitor.getCpuRealtimeSuspend()
                     val newGpuInfo = getGpuRealtimeInternal()
-                    val newMemoryInfo = memoryMonitor.getMemoryInfoSuspend()
+                    val newMemoryInfo = memoryMonitor.getMemoryInfo()
                     val newUptime = batteryMonitor.getUptimeMillis()
                     val newDeepSleep = batteryMonitor.getDeepSleepMillis()
 
