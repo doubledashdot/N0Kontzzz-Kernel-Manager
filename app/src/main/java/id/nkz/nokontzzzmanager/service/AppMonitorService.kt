@@ -44,7 +44,7 @@ class AppMonitorService : Service() {
     @Inject
     lateinit var fpsMonitorManager: id.nkz.nokontzzzmanager.manager.FpsMonitorManager
     
-    private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var monitorJob: Job? = null
     private var lastPackageName: String? = null
     private var isProfileApplied = false
@@ -153,7 +153,7 @@ class AppMonitorService : Service() {
     }
 
     private suspend fun checkForegroundApp() {
-        val currentApp = getForegroundPackageName()
+        val currentApp = withContext(Dispatchers.IO) { getForegroundPackageName() }
         
         if (currentApp != null && currentApp != lastPackageName) {
             Log.d("AppMonitorService", "App changed: $lastPackageName -> $currentApp")
