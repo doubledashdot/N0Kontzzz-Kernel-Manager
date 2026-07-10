@@ -250,7 +250,7 @@ class BatteryMonitorService : Service() {
             // Initial update
             try {
                 val stats = withContext(Dispatchers.IO) { collectSystemStats() }
-                withContext(Dispatchers.Main) { updateNotification(stats) }
+                updateNotification(stats)
             } catch (e: Exception) {
                 Log.e("BatteryMonitorService", "Initial update failed", e)
             }
@@ -259,7 +259,7 @@ class BatteryMonitorService : Service() {
                 try {
                     Log.d("BatteryMonitorService", "Heartbeat: Loop tick (Interactive=${pm.isInteractive})")
                     val stats = withContext(Dispatchers.IO) { collectSystemStats() }
-                    withContext(Dispatchers.Main) { updateNotification(stats) }
+                    updateNotification(stats)
                 } catch (e: Exception) {
                     Log.e("BatteryMonitorService", "Error in monitoring loop", e)
                 }
@@ -531,7 +531,7 @@ class BatteryMonitorService : Service() {
             try {
                 scope.launch(Dispatchers.Default) {
                     val stats = collectSystemStats()
-                    withContext(Dispatchers.Main) { updateNotification(stats) }
+                    updateNotification(stats)
                 }
                 nextDelayOverrideMs = 5_000L
             } catch (_: Exception) { }
@@ -547,7 +547,7 @@ class BatteryMonitorService : Service() {
                         try {
                             scope.launch(Dispatchers.Default) {
                                 val stats = collectSystemStats()
-                                withContext(Dispatchers.Main) { updateNotification(stats) }
+                                updateNotification(stats)
                             }
                             nextDelayOverrideMs = 5_000L
                         } catch (_: Exception) { }
@@ -565,7 +565,7 @@ class BatteryMonitorService : Service() {
                         try {
                             scope.launch(Dispatchers.Default) {
                                 val stats = collectSystemStats()
-                                withContext(Dispatchers.Main) { updateNotification(stats) }
+                                updateNotification(stats)
                             }
                             nextDelayOverrideMs = 5_000L
                         } catch (_: Exception) { }
@@ -647,7 +647,7 @@ class BatteryMonitorService : Service() {
             lastCurrent = 0f
             scope.launch(Dispatchers.Default) {
                 val stats = collectSystemStats()
-                withContext(Dispatchers.Main) { updateNotification(stats) }
+                updateNotification(stats)
             }
             nextDelayOverrideMs = 5_000L
         } catch (_: Exception) { }
@@ -687,7 +687,7 @@ class BatteryMonitorService : Service() {
         try {
             scope.launch(Dispatchers.Default) {
                 val stats = collectSystemStats()
-                withContext(Dispatchers.Main) { updateNotification(stats) }
+                updateNotification(stats)
             }
             nextDelayOverrideMs = 5_000L
         } catch (_: Exception) { }
@@ -730,7 +730,7 @@ class BatteryMonitorService : Service() {
         try {
             scope.launch(Dispatchers.Default) {
                 val stats = collectSystemStats()
-                withContext(Dispatchers.Main) { updateNotification(stats) }
+                updateNotification(stats)
             }
         } catch (_: Exception) {}
     }
