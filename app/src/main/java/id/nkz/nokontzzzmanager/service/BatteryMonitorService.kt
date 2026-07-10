@@ -277,10 +277,10 @@ class BatteryMonitorService : Service() {
         if (!immediate && now - lastManualUpdateTime < MANUAL_UPDATE_THROTTLE_MS) return
         lastManualUpdateTime = now
         
-        scope.launch(Dispatchers.Main.immediate) {
+        scope.launch(Dispatchers.IO) {
             try {
                 Log.d("BatteryMonitorService", "Triggering manual update (immediate=$immediate)")
-                val stats = withContext(Dispatchers.IO) { collectSystemStats() }
+                val stats = collectSystemStats()
                 updateNotification(stats)
             } catch (e: Exception) {
                 Log.e("BatteryMonitorService", "Manual update failed", e)

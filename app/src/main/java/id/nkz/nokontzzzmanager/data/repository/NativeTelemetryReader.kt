@@ -1,5 +1,6 @@
 package id.nkz.nokontzzzmanager.data.repository
 
+import android.util.Log
 import id.nkz.nokontzzzmanager.data.native.NativeTelemetry
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -24,18 +25,22 @@ class NativeTelemetryReader(
         val rawSnapshot = nativeJsonProvider()
         if (rawSnapshot == null) {
             nativeUnavailableCount.incrementAndGet()
+            Log.d(TAG, "native unavailable (so not loaded or returned null)")
             return null
         }
         return try {
             val snapshot = json.decodeFromString<TelemetrySnapshot>(rawSnapshot)
             successCount.incrementAndGet()
             if (snapshot.hasPartialData()) partialDataCount.incrementAndGet()
+            Log.d(TAG, "native ok — cpu=${snapshot.cpu.size} thermal=${snapshot.thermal.size} gpu=${snapshot.gpu != null} zram=${snapshot.zram != null} battery=${snapshot.battery != null}")
             snapshot
         } catch (_: IllegalArgumentException) {
             parseFailureCount.incrementAndGet()
+            Log.d(TAG, "native parse failed (IllegalArgumentException)")
             null
         } catch (_: SerializationException) {
             parseFailureCount.incrementAndGet()
+            Log.d(TAG, "native parse failed (SerializationException)")
             null
         }
     }
@@ -49,6 +54,8 @@ class NativeTelemetryReader(
     )
 
     companion object {
+        private const val TAG = "NativeTelemetry"
+
         @Volatile
         var nativeTelemetryEnabled: Boolean = true
 
