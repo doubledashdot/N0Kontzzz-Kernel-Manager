@@ -64,6 +64,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import id.nkz.nokontzzzmanager.ui.dialog.CoreConfigDialog
+import id.nkz.nokontzzzmanager.ui.dialog.SelectionDialog
 import id.nkz.nokontzzzmanager.viewmodel.TuningViewModel
 import kotlin.math.abs
 
@@ -351,6 +353,13 @@ private fun ControlSection(
     }
 }
 
+private sealed interface CpuClusterDialogState {
+    data class Governor(val cluster: String) : CpuClusterDialogState
+    data class MinFreq(val cluster: String) : CpuClusterDialogState
+    data class MaxFreq(val cluster: String) : CpuClusterDialogState
+    data object CoreStatus : CpuClusterDialogState
+}
+
 @Composable
 fun CpuGovernorCard(
     vm: TuningViewModel,
@@ -359,17 +368,80 @@ fun CpuGovernorCard(
 ) {
     val clusters by vm.dynamicCpuClusters.collectAsState()
     val shape = RoundedCornerShape(8.dp)
+
+    var activeDialog by remember { mutableStateOf<CpuClusterDialogState?>(null) }
+    val generalAvailableGovernors by vm.generalAvailableCpuGovernors.collectAsState()
+    val coreStates by vm.coreStates.collectAsState()
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         clusters.forEach { cluster ->
             CpuClusterCard(
                 clusterName = cluster,
                 vm = vm,
-                onGovernorClick = {},
-                onMinFrequencyClick = {},
-                onMaxFrequencyClick = {},
-                onCoreClick = {},
+                onGovernorClick = { activeDialog = CpuClusterDialogState.Governor(cluster) },
+                onMinFrequencyClick = { activeDialog = CpuClusterDialogState.MinFreq(cluster) },
+                onMaxFrequencyClick = { activeDialog = CpuClusterDialogState.MaxFreq(cluster) },
+                onCoreClick = { activeDialog = CpuClusterDialogState.CoreStatus },
                 shape = shape
             )
         }
+    }
+
+    when (val dialog = activeDialog) {
+        is CpuClusterDialogState.Governor -> {
+            val currentGov by vm.getCpuGov(dialog.cluster).collectAsState()
+            SelectionDialog(
+                title = stringResource(R.string.cpu_governor_label),
+                subtitle = dialog.cluster,
+                items = generalAvailableGovernors,
+                selectedItem = currentGov.takeIf { it != "..." && it != "Error" },
+                itemLabel = { it },
+                onItemSelected = { vm.setCpuGov(dialog.cluster, it); activeDialog = null },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        is CpuClusterDialogState.MinFreq -> {
+            val availableFreqs by vm.getAvailableCpuFrequencies(dialog.cluster).collectAsState()
+            val currentFreq by vm.getCpuFreq(dialog.cluster).collectAsState()
+            SelectionDialog(
+                title = stringResource(R.string.set_min_frequency),
+                subtitle = dialog.cluster,
+                items = availableFreqs,
+                selectedItem = currentFreq.first.takeIf { it > 0 },
+                itemLabel = { stringResource(R.string.app_profiles_mhz_suffix, it / 1000) },
+                onItemSelected = { selected ->
+                    val current = vm.getCpuFreq(dialog.cluster).value
+                    vm.setCpuFreq(dialog.cluster, selected, current.second)
+                    activeDialog = null
+                },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        is CpuClusterDialogState.MaxFreq -> {
+            val availableFreqs by vm.getAvailableCpuFrequencies(dialog.cluster).collectAsState()
+            val currentFreq by vm.getCpuFreq(dialog.cluster).collectAsState()
+            SelectionDialog(
+                title = stringResource(R.string.set_max_frequency),
+                subtitle = dialog.cluster,
+                items = availableFreqs,
+                selectedItem = currentFreq.second.takeIf { it > 0 },
+                itemLabel = { stringResource(R.string.app_profiles_mhz_suffix, it / 1000) },
+                onItemSelected = { selected ->
+                    val current = vm.getCpuFreq(dialog.cluster).value
+                    vm.setCpuFreq(dialog.cluster, current.first, selected)
+                    activeDialog = null
+                },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        is CpuClusterDialogState.CoreStatus -> {
+            CoreConfigDialog(
+                coreStates = coreStates,
+                configuredStates = coreStates.mapIndexed { index, enabled -> index to enabled }.toMap(),
+                onCoreToggled = { index, _ -> vm.toggleCore(index) },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        null -> {}
     }
 }
