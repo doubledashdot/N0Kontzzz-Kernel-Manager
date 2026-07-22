@@ -45,8 +45,8 @@ class MainViewModel @Inject constructor(
 
             if (versionLine.isNotBlank()) {
                 // not; string match only, no host check
-                if (versionLine.contains("4.19.325:not", ignoreCase = true) ||
-                    versionLine.contains("5.10.241:not", ignoreCase = true)) {
+                if (versionLine.contains("4.19.325-sm8250:not", ignoreCase = true) ||
+                    versionLine.contains("5.10.241-sm8250:not", ignoreCase = true)) {
                     return true
                 }
 
